@@ -23,23 +23,23 @@
   </select>
 
   <label for="leverage">Leverage:</label>
-  <input type="number" id="leverage" step="0.0001" oninput="recalculate()" />
+  <input type="number" id="leverage" step="0.0001" />
 
   <label for="margin">Margin (USDT):</label>
-  <input type="number" id="margin" step="0.0001" oninput="recalculate()" />
+  <input type="number" id="margin" step="0.0001" />
 
   <label for="leveragedMargin">Leveraged Margin:</label>
-  <input type="number" id="leveragedMargin" step="0.0001" oninput="recalculate()" />
+  <input type="number" id="leveragedMargin" step="0.0001" />
 
   <label for="entryPrice">Entry Price:</label>
-  <input type="number" id="entryPrice" step="0.0001" oninput="recalculate()" />
+  <input type="number" id="entryPrice" step="0.0001" />
 
   <label for="positionSize">Ukuran Posisi:</label>
-  <input type="number" id="positionSize" step="0.0001" oninput="recalculate()" />
+  <input type="number" id="positionSize" step="0.0001" />
 
   <div id="crossOnly" style="display:none;">
     <label for="unusedMargin">Unused Margin (Cross only):</label>
-    <input type="number" id="unusedMargin" step="0.0001" oninput="recalculate()" />
+    <input type="number" id="unusedMargin" step="0.0001" />
   </div>
 
   <button onclick="calculateLiquidation()">Hitung Harga Likuidasi</button>
@@ -48,16 +48,20 @@
 
   <script>
     let formulas = {};
+    let isUpdating = false;
 
     fetch('formula.json')
-      .then(response => response.json())
-      .then(data => {
-        formulas = data;
-      });
+      .then(res => res.json())
+      .then(json => formulas = json);
 
-    document.getElementById('mode').addEventListener('change', function () {
-      document.getElementById('crossOnly').style.display = this.value === 'cross' ? 'block' : 'none';
-      recalculate();
+    document.getElementById('mode').addEventListener('change', () => {
+      document.getElementById('crossOnly').style.display =
+        document.getElementById('mode').value === 'cross' ? 'block' : 'none';
+    });
+
+    const inputs = ['leverage', 'margin', 'leveragedMargin', 'entryPrice', 'positionSize'];
+    inputs.forEach(id => {
+      document.getElementById(id).addEventListener('input', () => recalculate(id));
     });
 
     function get(id) {
@@ -67,22 +71,24 @@
     function set(id, value) {
       const el = document.getElementById(id);
       const val = value ? value.toFixed(6).replace(/\.?0+$/, '') : '';
-      if (parseFloat(el.value) !== parseFloat(val)) {
+      if (el.value !== val && !el.matches(':focus')) {
         el.value = val;
       }
     }
 
-    function evaluateFormula(formula, values) {
+    function evaluateFormula(formula, vars) {
       try {
-        const fn = new Function(...Object.keys(values), `return ${formula};`);
-        return fn(...Object.values(values));
+        return new Function(...Object.keys(vars), `return ${formula};`)(...Object.values(vars));
       } catch (e) {
         return 0;
       }
     }
 
-    function recalculate() {
-      const inputs = {
+    function recalculate(changedField) {
+      if (isUpdating) return;
+      isUpdating = true;
+
+      const values = {
         leverage: get('leverage'),
         margin: get('margin'),
         leveragedMargin: get('leveragedMargin'),
@@ -90,21 +96,33 @@
         positionSize: get('positionSize')
       };
 
-      if (inputs.leverage && inputs.margin) {
-        set('leveragedMargin', evaluateFormula(formulas.leveragedMargin, inputs));
+      // Prioritize calculations based on what changed
+      switch (changedField) {
+        case 'leverage':
+        case 'margin':
+          if (values.leverage && values.margin) {
+            values.leveragedMargin = evaluateFormula(formulas.leveragedMargin, values);
+            set('leveragedMargin', values.leveragedMargin);
+          }
+          break;
+        case 'leveragedMargin':
+          if (values.leveragedMargin && values.leverage) {
+            values.margin = evaluateFormula(formulas.margin, values);
+            set('margin', values.margin);
+          }
+          break;
       }
-      if (inputs.leveragedMargin && inputs.leverage) {
-        set('margin', evaluateFormula(formulas.margin, inputs));
+
+      // Derive positionSize or entryPrice
+      if (values.leveragedMargin && values.entryPrice) {
+        values.positionSize = evaluateFormula(formulas.positionSize, values);
+        set('positionSize', values.positionSize);
+      } else if (values.leveragedMargin && values.positionSize) {
+        values.entryPrice = evaluateFormula(formulas.entryPrice, values);
+        set('entryPrice', values.entryPrice);
       }
-      if (inputs.leveragedMargin && inputs.margin) {
-        set('leverage', evaluateFormula(formulas.leverage, inputs));
-      }
-      if (inputs.leveragedMargin && inputs.entryPrice) {
-        set('positionSize', evaluateFormula(formulas.positionSize, inputs));
-      }
-      if (inputs.leveragedMargin && inputs.positionSize) {
-        set('entryPrice', evaluateFormula(formulas.entryPrice, inputs));
-      }
+
+      isUpdating = false;
     }
 
     function calculateLiquidation() {
