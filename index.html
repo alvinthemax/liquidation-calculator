@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <title>Penghitung Harga Likuidasi</title>
+  <style>
+    body { font-family: Arial; max-width: 600px; margin: auto; padding: 20px; }
+    label, select, input { display: block; margin: 10px 0; width: 100%; }
+    input[readonly] { background-color: #f0f0f0; }
+    button { padding: 10px; width: 100%; background: #007BFF; color: white; border: none; cursor: pointer; }
+    #result { margin-top: 20px; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <h2>Penghitung Harga Likuidasi (Long / Short)</h2>
+
+  <label for="mode">Tipe Mode:</label>
+  <select id="mode">
+    <option value="isolated">Isolated</option>
+    <option value="cross">Cross</option>
+  </select>
+
+  <label for="direction">Arah Posisi:</label>
+  <select id="direction">
+    <option value="long">Long</option>
+    <option value="short">Short</option>
+  </select>
+
+  <label for="leverage">Leverage:</label>
+  <input type="number" id="leverage" step="0.0001" oninput="recalculate()" />
+
+  <label for="margin">Margin (USDT):</label>
+  <input type="number" id="margin" step="0.0001" oninput="recalculate()" />
+
+  <label for="leveragedMargin">Leveraged Margin:</label>
+  <input type="number" id="leveragedMargin" step="0.0001" oninput="recalculate()" />
+
+  <label for="entryPrice">Entry Price:</label>
+  <input type="number" id="entryPrice" step="0.0001" oninput="recalculate()" />
+
+  <label for="positionSize">Ukuran Posisi:</label>
+  <input type="number" id="positionSize" step="0.0001" oninput="recalculate()" />
+
+  <div id="crossOnly" style="display:none;">
+    <label for="unusedMargin">Unused Margin (Cross only):</label>
+    <input type="number" id="unusedMargin" step="0.0001" oninput="recalculate()" />
+  </div>
+
+  <button onclick="calculateLiquidation()">Hitung Harga Likuidasi</button>
+  <div id="result"></div>
+
+  <script>
+    let formulas = {};
+
+    fetch('formula.json')
+      .then(response => response.json())
+      .then(data => {
+        formulas = data;
+      });
+
+    document.getElementById('mode').addEventListener('change', function () {
+      document.getElementById('crossOnly').style.display = this.value === 'cross' ? 'block' : 'none';
+      recalculate();
+    });
+
+    function get(id) {
+      return parseFloat(document.getElementById(id).value) || 0;
+    }
+
+    function set(id, value) {
+      const el = document.getElementById(id);
+      const val = value ? value.toFixed(6).replace(/\.?0+$/, '') : '';
+      if (parseFloat(el.value) !== parseFloat(val)) {
+        el.value = val;
+      }
+    }
+
+    function evaluateFormula(formula, values) {
+      try {
+        const fn = new Function(...Object.keys(values), `return ${formula};`);
+        return fn(...Object.values(values));
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    function recalculate() {
+      const inputs = {
+        leverage: get('leverage'),
+        margin: get('margin'),
+        leveragedMargin: get('leveragedMargin'),
+        entryPrice: get('entryPrice'),
+        positionSize: get('positionSize')
+      };
+
+      // Recalculate values based on available formulas
+      if (inputs.leverage && inputs.margin) {
+        set('leveragedMargin', evaluateFormula(formulas.leveragedMargin, inputs));
+      }
+      if (inputs.leveragedMargin && inputs.leverage) {
+        set('margin', evaluateFormula(formulas.margin, inputs));
+      }
+      if (inputs.leveragedMargin && inputs.margin) {
+        set('leverage', evaluateFormula(formulas.leverage, inputs));
+      }
+      if (inputs.leveragedMargin && inputs.entryPrice) {
+        set('positionSize', evaluateFormula(formulas.positionSize, inputs));
+      }
+      if (inputs.leveragedMargin && inputs.positionSize) {
+        set('entryPrice', evaluateFormula(formulas.entryPrice, inputs));
+      }
+    }
+
+    function calculateLiquidation() {
+      const mode = document.getElementById('mode').value;
+      const direction = document.getElementById('direction').value;
+      const values = {
+        leverage: get('leverage'),
+        margin: get('margin'),
+        leveragedMargin: get('leveragedMargin'),
+        entryPrice: get('entryPrice'),
+        positionSize: get('positionSize'),
+        unusedMargin: get('unusedMargin')
+      };
+
+      if (!values.leverage || !values.margin || !values.entryPrice || !values.positionSize) {
+        document.getElementById('result').textContent = "Mohon isi semua nilai yang diperlukan.";
+        return;
+      }
+
+      let formulaKey = '';
+      if (mode === 'isolated') {
+        formulaKey = direction === 'long' ? 'liquidationPriceIsolatedLong' : 'liquidationPriceIsolatedShort';
+      } else {
+        formulaKey = direction === 'long' ? 'liquidationPriceCrossLong' : 'liquidationPriceCrossShort';
+      }
+
+      const result = evaluateFormula(formulas[formulaKey], values);
+
+      document.getElementById('result').textContent =
+        result <= 0
+          ? "Posisi anda tidak memiliki harga Likuidasi"
+          : `Harga Likuidasi (Perkiraan): ${result.toFixed(6)}`;
+    }
+  </script>
+
+</body>
+</html>
