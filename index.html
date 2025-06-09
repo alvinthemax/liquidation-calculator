@@ -2,14 +2,9 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Penghitung Harga Likuidasi</title>
-  <style>
-    body { font-family: Arial; max-width: 600px; margin: auto; padding: 20px; }
-    label, select, input { display: block; margin: 10px 0; width: 100%; }
-    input[readonly] { background-color: #f0f0f0; }
-    button { padding: 10px; width: 100%; background: #007BFF; color: white; border: none; cursor: pointer; }
-    #result { margin-top: 20px; font-weight: bold; }
-  </style>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
@@ -48,6 +43,7 @@
   </div>
 
   <button onclick="calculateLiquidation()">Hitung Harga Likuidasi</button>
+
   <div id="result"></div>
 
   <script>
@@ -94,7 +90,6 @@
         positionSize: get('positionSize')
       };
 
-      // Recalculate values based on available formulas
       if (inputs.leverage && inputs.margin) {
         set('leveragedMargin', evaluateFormula(formulas.leveragedMargin, inputs));
       }
