@@ -47,120 +47,124 @@
   <div id="result"></div>
 
   <script>
-  let formulas = {};
-  let isUpdating = false;
+    let formulas = {};
+    let isUpdating = false;
+    let lastChangedField = null;
 
-  fetch('formula.json')
-    .then(res => res.json())
-    .then(json => formulas = json);
+    fetch('formula.json')
+      .then(res => res.json())
+      .then(json => formulas = json);
 
-  document.getElementById('mode').addEventListener('change', () => {
-    document.getElementById('crossOnly').style.display =
-      document.getElementById('mode').value === 'cross' ? 'block' : 'none';
-  });
+    document.getElementById('mode').addEventListener('change', () => {
+      document.getElementById('crossOnly').style.display =
+        document.getElementById('mode').value === 'cross' ? 'block' : 'none';
+    });
 
-  const inputs = ['leverage', 'margin', 'leveragedMargin', 'entryPrice', 'positionSize'];
-  inputs.forEach(id => {
-    document.getElementById(id).addEventListener('input', () => recalculate());
-  });
+    const inputs = ['leverage', 'margin', 'leveragedMargin', 'entryPrice', 'positionSize'];
+    inputs.forEach(id => {
+      document.getElementById(id).addEventListener('input', () => {
+        lastChangedField = id;
+        recalculate();
+      });
+    });
 
-  function get(id) {
-    return parseFloat(document.getElementById(id).value) || 0;
-  }
-
-  function set(id, value) {
-    const el = document.getElementById(id);
-    const val = value ? value.toFixed(6).replace(/\.?0+$/, '') : '';
-    if (el.value !== val && !el.matches(':focus')) {
-      el.value = val;
-    }
-  }
-
-  function evaluateFormula(formula, vars) {
-    try {
-      return new Function(...Object.keys(vars), `return ${formula};`)(...Object.values(vars));
-    } catch (e) {
-      return 0;
-    }
-  }
-
-  function recalculate() {
-    if (isUpdating) return;
-    isUpdating = true;
-
-    const values = {
-      leverage: get('leverage'),
-      margin: get('margin'),
-      leveragedMargin: get('leveragedMargin'),
-      entryPrice: get('entryPrice'),
-      positionSize: get('positionSize')
-    };
-
-    // STEP 1: Leverage + Margin → Leveraged Margin
-    if (values.leverage > 0 && values.margin > 0) {
-      values.leveragedMargin = evaluateFormula(formulas.leveragedMargin, values);
-      set('leveragedMargin', values.leveragedMargin);
+    function get(id) {
+      return parseFloat(document.getElementById(id).value) || 0;
     }
 
-    // STEP 2: Leveraged Margin + Entry Price → Position Size
-    if (values.leveragedMargin > 0 && values.entryPrice > 0) {
-      values.positionSize = evaluateFormula(formulas.positionSize, values);
-      set('positionSize', values.positionSize);
+    function set(id, value) {
+      const el = document.getElementById(id);
+      const val = value ? value.toFixed(6).replace(/\.?0+$/, '') : '';
+      if (!el.matches(':focus') && el.value !== val) {
+        el.value = val;
+      }
     }
 
-    // STEP 3: Entry Price + Position Size → Leveraged Margin (jika belum ada)
-    if (values.entryPrice > 0 && values.positionSize > 0 && values.leveragedMargin === 0) {
-      values.leveragedMargin = evaluateFormula(formulas.leveragedMarginFromEntryAndSize, values);
-      set('leveragedMargin', values.leveragedMargin);
+    function evaluateFormula(formula, vars) {
+      try {
+        return new Function(...Object.keys(vars), `return ${formula};`)(...Object.values(vars));
+      } catch (e) {
+        return 0;
+      }
     }
 
-    // STEP 4: Leveraged Margin + Leverage → Margin (jika belum ada)
-    if (values.leveragedMargin > 0 && values.leverage > 0 && values.margin === 0) {
-      values.margin = evaluateFormula(formulas.margin, values);
-      set('margin', values.margin);
+    function recalculate() {
+      if (isUpdating) return;
+      isUpdating = true;
+
+      const values = {
+        leverage: get('leverage'),
+        margin: get('margin'),
+        leveragedMargin: get('leveragedMargin'),
+        entryPrice: get('entryPrice'),
+        positionSize: get('positionSize')
+      };
+
+      if ((lastChangedField === 'positionSize' || lastChangedField === 'entryPrice') &&
+          values.positionSize > 0 && values.entryPrice > 0) {
+        values.leveragedMargin = evaluateFormula(formulas.leveragedMarginFromEntryAndSize, values);
+        set('leveragedMargin', values.leveragedMargin);
+      }
+
+      if (lastChangedField === 'leveragedMargin' && values.entryPrice > 0) {
+        values.positionSize = evaluateFormula(formulas.positionSize, values);
+        set('positionSize', values.positionSize);
+      }
+
+      if (lastChangedField === 'leveragedMargin' && values.leverage > 0) {
+        values.margin = evaluateFormula(formulas.margin, values);
+        set('margin', values.margin);
+      }
+
+      if ((lastChangedField === 'leverage' || lastChangedField === 'margin') &&
+          values.leverage > 0 && values.margin > 0) {
+        values.leveragedMargin = evaluateFormula(formulas.leveragedMargin, values);
+        set('leveragedMargin', values.leveragedMargin);
+        if (values.entryPrice > 0) {
+          values.positionSize = evaluateFormula(formulas.positionSize, values);
+          set('positionSize', values.positionSize);
+        }
+      }
+
+      if (lastChangedField === 'leveragedMargin' && values.margin > 0) {
+        values.leverage = evaluateFormula(formulas.leverage, values);
+        set('leverage', values.leverage);
+      }
+
+      isUpdating = false;
     }
 
-    // STEP 5: Leveraged Margin + Margin → Leverage (jika belum ada)
-    if (values.leveragedMargin > 0 && values.margin > 0 && values.leverage === 0) {
-      values.leverage = evaluateFormula(formulas.leverage, values);
-      set('leverage', values.leverage);
+    function calculateLiquidation() {
+      const mode = document.getElementById('mode').value;
+      const direction = document.getElementById('direction').value;
+      const values = {
+        leverage: get('leverage'),
+        margin: get('margin'),
+        leveragedMargin: get('leveragedMargin'),
+        entryPrice: get('entryPrice'),
+        positionSize: get('positionSize'),
+        unusedMargin: get('unusedMargin')
+      };
+
+      if (!values.leverage || !values.margin || !values.entryPrice || !values.positionSize) {
+        document.getElementById('result').textContent = "Mohon isi semua nilai yang diperlukan.";
+        return;
+      }
+
+      let formulaKey = '';
+      if (mode === 'isolated') {
+        formulaKey = direction === 'long' ? 'liquidationPriceIsolatedLong' : 'liquidationPriceIsolatedShort';
+      } else {
+        formulaKey = direction === 'long' ? 'liquidationPriceCrossLong' : 'liquidationPriceCrossShort';
+      }
+
+      const result = evaluateFormula(formulas[formulaKey], values);
+      document.getElementById('result').textContent =
+        result <= 0
+          ? "Posisi anda tidak memiliki harga Likuidasi"
+          : `Harga Likuidasi (Perkiraan): ${result.toFixed(6)}`;
     }
-
-    isUpdating = false;
-  }
-
-  function calculateLiquidation() {
-    const mode = document.getElementById('mode').value;
-    const direction = document.getElementById('direction').value;
-    const values = {
-      leverage: get('leverage'),
-      margin: get('margin'),
-      leveragedMargin: get('leveragedMargin'),
-      entryPrice: get('entryPrice'),
-      positionSize: get('positionSize'),
-      unusedMargin: get('unusedMargin')
-    };
-
-    if (!values.leverage || !values.margin || !values.entryPrice || !values.positionSize) {
-      document.getElementById('result').textContent = "Mohon isi semua nilai yang diperlukan.";
-      return;
-    }
-
-    let formulaKey = '';
-    if (mode === 'isolated') {
-      formulaKey = direction === 'long' ? 'liquidationPriceIsolatedLong' : 'liquidationPriceIsolatedShort';
-    } else {
-      formulaKey = direction === 'long' ? 'liquidationPriceCrossLong' : 'liquidationPriceCrossShort';
-    }
-
-    const result = evaluateFormula(formulas[formulaKey], values);
-
-    document.getElementById('result').textContent =
-      result <= 0
-        ? "Posisi anda tidak memiliki harga Likuidasi"
-        : `Harga Likuidasi (Perkiraan): ${result.toFixed(6)}`;
-  }
-</script>
+  </script>
 
 </body>
 </html>
