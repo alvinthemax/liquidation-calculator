@@ -47,25 +47,22 @@
   <div id="result"></div>
 
   <script>
-    let formulas = {};
-    let isUpdating = false;
-    let lastChangedField = null;
-
-    fetch('formula.json')
-      .then(res => res.json())
-      .then(json => formulas = json);
-
-    document.getElementById('mode').addEventListener('change', () => {
-      document.getElementById('crossOnly').style.display =
-        document.getElementById('mode').value === 'cross' ? 'block' : 'none';
-    });
+    let lastChanged = null;
+    let updating = false;
 
     const inputs = ['leverage', 'margin', 'leveragedMargin', 'entryPrice', 'positionSize'];
+
     inputs.forEach(id => {
       document.getElementById(id).addEventListener('input', () => {
-        lastChangedField = id;
+        if (updating) return;
+        lastChanged = id;
         recalculate();
       });
+    });
+
+    document.getElementById('mode').addEventListener('change', function () {
+      const isCross = this.value === 'cross';
+      document.getElementById('crossOnly').style.display = isCross ? 'block' : 'none';
     });
 
     function get(id) {
@@ -73,96 +70,80 @@
     }
 
     function set(id, value) {
-      const el = document.getElementById(id);
-      const val = value ? value.toFixed(6).replace(/\.?0+$/, '') : '';
-      if (!el.matches(':focus') && el.value !== val) {
-        el.value = val;
-      }
+      document.getElementById(id).value = value ? value.toFixed(6).replace(/\.?0+$/, '') : '';
     }
 
-    function evaluateFormula(formula, vars) {
-      try {
-        return new Function(...Object.keys(vars), `return ${formula};`)(...Object.values(vars));
-      } catch (e) {
-        return 0;
-      }
-    }
+    async function recalculate() {
+      updating = true;
 
-    function recalculate() {
-      if (isUpdating) return;
-      isUpdating = true;
+      const leverage = get('leverage');
+      const margin = get('margin');
+      const leveragedMargin = get('leveragedMargin');
+      const entryPrice = get('entryPrice');
+      const positionSize = get('positionSize');
 
-      const values = {
-        leverage: get('leverage'),
-        margin: get('margin'),
-        leveragedMargin: get('leveragedMargin'),
-        entryPrice: get('entryPrice'),
-        positionSize: get('positionSize')
-      };
-
-      if ((lastChangedField === 'positionSize' || lastChangedField === 'entryPrice') &&
-          values.positionSize > 0 && values.entryPrice > 0) {
-        values.leveragedMargin = evaluateFormula(formulas.leveragedMarginFromEntryAndSize, values);
-        set('leveragedMargin', values.leveragedMargin);
-      }
-
-      if (lastChangedField === 'leveragedMargin' && values.entryPrice > 0) {
-        values.positionSize = evaluateFormula(formulas.positionSize, values);
-        set('positionSize', values.positionSize);
-      }
-
-      if (lastChangedField === 'leveragedMargin' && values.leverage > 0) {
-        values.margin = evaluateFormula(formulas.margin, values);
-        set('margin', values.margin);
-      }
-
-      if ((lastChangedField === 'leverage' || lastChangedField === 'margin') &&
-          values.leverage > 0 && values.margin > 0) {
-        values.leveragedMargin = evaluateFormula(formulas.leveragedMargin, values);
-        set('leveragedMargin', values.leveragedMargin);
-        if (values.entryPrice > 0) {
-          values.positionSize = evaluateFormula(formulas.positionSize, values);
-          set('positionSize', values.positionSize);
+      // Atur perhitungan berdasarkan input terakhir
+      if (lastChanged === 'positionSize' || lastChanged === 'entryPrice') {
+        if (entryPrice > 0 && positionSize > 0) {
+          const newLeveragedMargin = positionSize * entryPrice;
+          set('leveragedMargin', newLeveragedMargin);
+          if (leverage > 0) {
+            set('margin', newLeveragedMargin / leverage);
+          }
+        }
+      } else if (lastChanged === 'leveragedMargin') {
+        if (entryPrice > 0) {
+          set('positionSize', leveragedMargin / entryPrice);
+        }
+        if (leverage > 0) {
+          set('margin', leveragedMargin / leverage);
+        }
+      } else if (lastChanged === 'margin' || lastChanged === 'leverage') {
+        if (leverage > 0 && margin > 0) {
+          const newLeveragedMargin = leverage * margin;
+          set('leveragedMargin', newLeveragedMargin);
+          if (entryPrice > 0) {
+            set('positionSize', newLeveragedMargin / entryPrice);
+          }
         }
       }
 
-      if (lastChangedField === 'leveragedMargin' && values.margin > 0) {
-        values.leverage = evaluateFormula(formulas.leverage, values);
-        set('leverage', values.leverage);
-      }
-
-      isUpdating = false;
+      updating = false;
     }
 
     function calculateLiquidation() {
       const mode = document.getElementById('mode').value;
       const direction = document.getElementById('direction').value;
-      const values = {
-        leverage: get('leverage'),
-        margin: get('margin'),
-        leveragedMargin: get('leveragedMargin'),
-        entryPrice: get('entryPrice'),
-        positionSize: get('positionSize'),
-        unusedMargin: get('unusedMargin')
-      };
+      const leverage = get('leverage');
+      const margin = get('margin');
+      const entryPrice = get('entryPrice');
+      const positionSize = get('positionSize');
+      const unusedMargin = get('unusedMargin');
 
-      if (!values.leverage || !values.margin || !values.entryPrice || !values.positionSize) {
+      if (!leverage || !margin || !entryPrice || !positionSize) {
         document.getElementById('result').textContent = "Mohon isi semua nilai yang diperlukan.";
         return;
       }
 
-      let formulaKey = '';
+      let liquidationPrice = 0;
+
       if (mode === 'isolated') {
-        formulaKey = direction === 'long' ? 'liquidationPriceIsolatedLong' : 'liquidationPriceIsolatedShort';
+        const lossPerUnit = entryPrice / leverage;
+        liquidationPrice = direction === 'long'
+          ? entryPrice - lossPerUnit
+          : entryPrice + lossPerUnit;
       } else {
-        formulaKey = direction === 'long' ? 'liquidationPriceCrossLong' : 'liquidationPriceCrossShort';
+        const totalMargin = margin + unusedMargin;
+        const riskValue = (totalMargin * entryPrice) / positionSize;
+        liquidationPrice = direction === 'long'
+          ? entryPrice - riskValue
+          : entryPrice + riskValue;
       }
 
-      const result = evaluateFormula(formulas[formulaKey], values);
       document.getElementById('result').textContent =
-        result <= 0
+        liquidationPrice <= 0
           ? "Posisi anda tidak memiliki harga Likuidasi"
-          : `Harga Likuidasi (Perkiraan): ${result.toFixed(6)}`;
+          : `Harga Likuidasi (Perkiraan): ${liquidationPrice.toFixed(6)}`;
     }
   </script>
 
