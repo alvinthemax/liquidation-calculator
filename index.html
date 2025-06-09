@@ -66,11 +66,16 @@
     });
 
     function get(id) {
-      return parseFloat(document.getElementById(id).value) || 0;
+      const value = document.getElementById(id).value;
+      return value === '' ? NaN : parseFloat(value);
     }
 
     function set(id, value) {
-      document.getElementById(id).value = value ? value.toFixed(6).replace(/\.?0+$/, '') : '';
+      if (isNaN(value)) {
+        document.getElementById(id).value = '';
+      } else {
+        document.getElementById(id).value = value.toFixed(6).replace(/\.?0+$/, '');
+      }
     }
 
     async function recalculate() {
@@ -83,27 +88,47 @@
       const positionSize = get('positionSize');
 
       // Atur perhitungan berdasarkan input terakhir
-      if (lastChanged === 'positionSize' || lastChanged === 'entryPrice') {
-        if (entryPrice > 0 && positionSize > 0) {
+      if (lastChanged === 'positionSize') {
+        if (!isNaN(entryPrice) && !isNaN(positionSize)) {
           const newLeveragedMargin = positionSize * entryPrice;
           set('leveragedMargin', newLeveragedMargin);
-          if (leverage > 0) {
+          if (!isNaN(leverage) && leverage > 0) {
             set('margin', newLeveragedMargin / leverage);
           }
         }
-      } else if (lastChanged === 'leveragedMargin') {
-        if (entryPrice > 0) {
+      } 
+      else if (lastChanged === 'entryPrice') {
+        if (!isNaN(positionSize) && !isNaN(entryPrice)) {
+          set('leveragedMargin', positionSize * entryPrice);
+        }
+        if (!isNaN(leverage) && leverage > 0 && !isNaN(margin)) {
+          set('leveragedMargin', leverage * margin);
+          if (!isNaN(entryPrice) && entryPrice > 0) {
+            set('positionSize', leverage * margin / entryPrice);
+          }
+        }
+      }
+      else if (lastChanged === 'leveragedMargin') {
+        if (!isNaN(entryPrice) && entryPrice > 0) {
           set('positionSize', leveragedMargin / entryPrice);
         }
-        if (leverage > 0) {
+        if (!isNaN(leverage) && leverage > 0) {
           set('margin', leveragedMargin / leverage);
         }
-      } else if (lastChanged === 'margin' || lastChanged === 'leverage') {
-        if (leverage > 0 && margin > 0) {
-          const newLeveragedMargin = leverage * margin;
-          set('leveragedMargin', newLeveragedMargin);
-          if (entryPrice > 0) {
-            set('positionSize', newLeveragedMargin / entryPrice);
+      } 
+      else if (lastChanged === 'margin') {
+        if (!isNaN(leverage) && leverage > 0) {
+          set('leveragedMargin', leverage * margin);
+          if (!isNaN(entryPrice) && entryPrice > 0) {
+            set('positionSize', leverage * margin / entryPrice);
+          }
+        }
+      } 
+      else if (lastChanged === 'leverage') {
+        if (!isNaN(margin) && !isNaN(leverage) && leverage > 0) {
+          set('leveragedMargin', leverage * margin);
+          if (!isNaN(entryPrice) && entryPrice > 0) {
+            set('positionSize', leverage * margin / entryPrice);
           }
         }
       }
@@ -120,7 +145,7 @@
       const positionSize = get('positionSize');
       const unusedMargin = get('unusedMargin');
 
-      if (!leverage || !margin || !entryPrice || !positionSize) {
+      if (isNaN(leverage) || isNaN(margin) || isNaN(entryPrice) || isNaN(positionSize)) {
         document.getElementById('result').textContent = "Mohon isi semua nilai yang diperlukan.";
         return;
       }
@@ -133,7 +158,7 @@
           ? entryPrice - lossPerUnit
           : entryPrice + lossPerUnit;
       } else {
-        const totalMargin = margin + unusedMargin;
+        const totalMargin = isNaN(unusedMargin) ? margin : margin + unusedMargin;
         const riskValue = (totalMargin * entryPrice) / positionSize;
         liquidationPrice = direction === 'long'
           ? entryPrice - riskValue
