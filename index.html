@@ -61,7 +61,7 @@
 
     const inputs = ['leverage', 'margin', 'leveragedMargin', 'entryPrice', 'positionSize'];
     inputs.forEach(id => {
-      document.getElementById(id).addEventListener('input', () => recalculate(id));
+      document.getElementById(id).addEventListener('input', () => recalculate());
     });
 
     function get(id) {
@@ -84,7 +84,7 @@
       }
     }
 
-    function recalculate(changedField) {
+    function recalculate() {
       if (isUpdating) return;
       isUpdating = true;
 
@@ -96,30 +96,28 @@
         positionSize: get('positionSize')
       };
 
-      // Prioritize calculations based on what changed
-      switch (changedField) {
-        case 'leverage':
-        case 'margin':
-          if (values.leverage && values.margin) {
-            values.leveragedMargin = evaluateFormula(formulas.leveragedMargin, values);
-            set('leveragedMargin', values.leveragedMargin);
-          }
-          break;
-        case 'leveragedMargin':
-          if (values.leveragedMargin && values.leverage) {
-            values.margin = evaluateFormula(formulas.margin, values);
-            set('margin', values.margin);
-          }
-          break;
+      // Step 1: Entry Price + Position Size → Leveraged Margin
+      if (values.entryPrice > 0 && values.positionSize > 0) {
+        values.leveragedMargin = evaluateFormula(formulas.leveragedMarginFromEntryAndSize, values);
+        set('leveragedMargin', values.leveragedMargin);
       }
 
-      // Derive positionSize or entryPrice
-      if (values.leveragedMargin && values.entryPrice) {
+      // Step 2: Leveraged Margin + Leverage → Margin
+      if (values.leveragedMargin > 0 && values.leverage > 0) {
+        values.margin = evaluateFormula(formulas.margin, values);
+        set('margin', values.margin);
+      }
+
+      // Step 3: Margin + Leverage → Leveraged Margin (jika belum punya)
+      if (values.margin > 0 && values.leverage > 0 && values.leveragedMargin === 0) {
+        values.leveragedMargin = evaluateFormula(formulas.leveragedMargin, values);
+        set('leveragedMargin', values.leveragedMargin);
+      }
+
+      // Step 4: Leveraged Margin + Entry Price → Position Size
+      if (values.leveragedMargin > 0 && values.entryPrice > 0 && values.positionSize === 0) {
         values.positionSize = evaluateFormula(formulas.positionSize, values);
         set('positionSize', values.positionSize);
-      } else if (values.leveragedMargin && values.positionSize) {
-        values.entryPrice = evaluateFormula(formulas.entryPrice, values);
-        set('entryPrice', values.entryPrice);
       }
 
       isUpdating = false;
