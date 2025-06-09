@@ -87,7 +87,6 @@
       const entryPrice = get('entryPrice');
       const positionSize = get('positionSize');
 
-      // Atur perhitungan berdasarkan input terakhir
       if (lastChanged === 'positionSize') {
         if (!isNaN(entryPrice) && !isNaN(positionSize)) {
           const newLeveragedMargin = positionSize * entryPrice;
@@ -103,7 +102,7 @@
         }
         if (!isNaN(leverage) && leverage > 0 && !isNaN(margin)) {
           set('leveragedMargin', leverage * margin);
-          if (!isNaN(entryPrice) && entryPrice > 0) {
+          if (entryPrice > 0) {
             set('positionSize', leverage * margin / entryPrice);
           }
         }
@@ -118,18 +117,19 @@
       } 
       else if (lastChanged === 'margin') {
         if (!isNaN(leverage) && leverage > 0) {
-          set('leveragedMargin', leverage * margin);
+          const newLeveragedMargin = leverage * margin;
+          set('leveragedMargin', newLeveragedMargin);
           if (!isNaN(entryPrice) && entryPrice > 0) {
-            set('positionSize', leverage * margin / entryPrice);
+            set('positionSize', newLeveragedMargin / entryPrice);
           }
         }
       } 
       else if (lastChanged === 'leverage') {
-        if (!isNaN(margin) && !isNaN(leverage) && leverage > 0) {
-          set('leveragedMargin', leverage * margin);
-          if (!isNaN(entryPrice) && entryPrice > 0) {
-            set('positionSize', leverage * margin / entryPrice);
-          }
+        if (!isNaN(leveragedMargin) && leverage > 0) {
+          set('margin', leveragedMargin / leverage);
+        }
+        if (!isNaN(leveragedMargin) && !isNaN(entryPrice) && entryPrice > 0) {
+          set('positionSize', leveragedMargin / entryPrice);
         }
       }
 
