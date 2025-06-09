@@ -6,6 +6,6 @@
   "entryPrice": "leveragedMargin / positionSize",
   "liquidationPriceIsolatedLong": "entryPrice - (entryPrice / leverage)",
   "liquidationPriceIsolatedShort": "entryPrice + (entryPrice / leverage)",
-  "liquidationPriceCrossLong": "entryPrice - ((margin + unusedMargin) / positionSize)",
-  "liquidationPriceCrossShort": "entryPrice + ((margin + unusedMargin) / positionSize)"
+  "liquidationPriceCrossLong": "entryPrice - ((margin + unusedMargin) * entryPrice / positionSize)",
+  "liquidationPriceCrossShort": "entryPrice + ((margin + unusedMargin) * entryPrice / positionSize)"
 }
